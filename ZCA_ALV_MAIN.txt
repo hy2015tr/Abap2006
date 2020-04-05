@@ -1,0 +1,233 @@
+*======================================================================*
+*  Developer : Hasan YILDIRIM - 01.Jan.2007  [ ALFA YAZILIM ]
+*  Subject   : ALFA ALV Template
+*======================================================================*
+
+report zalfa_alv_template.
+
+*----DATA DEFINITIONS--------------------------------------------------*
+
+type-pools slis.
+
+data: gv_variant type disvariant,
+      gv_repid   type syst-repid.
+
+data: begin of gt_out occurs 0,
+        matnr like mara-matnr,
+        maktx like makt-maktx,
+        brgew like mara-brgew,
+        ntgew like mara-ntgew,
+        gewei like mara-gewei,
+        mtart like mara-mtart,
+        matkl like mara-matkl,
+      end of gt_out.
+
+data: begin of so,
+        mtart type mara-mtart,
+        matnr type mara-matnr,
+      end of so.
+
+*-----SELECTION-SCREEN:1-----------------------------------------------*
+
+selection-screen begin of block b1 with frame title text-001.
+
+select-options: s_mtart for so-mtart,
+                s_matnr for so-matnr.
+
+selection-screen end of block b1.
+
+*-----SELECTION-SCREEN:2-----------------------------------------------*
+
+selection-screen begin of block b2 with frame title text-002.
+
+parameters: p_langu type syst-langu default sy-langu.
+
+selection-screen end of block b2.
+
+*-----INITIALIZATION---------------------------------------------------*
+
+initialization.
+  perform initialization.
+
+*----START-OF-SELECTION------------------------------------------------*
+
+start-of-selection.
+
+  perform get_data.
+
+*----------------------------------------------------------------------*
+
+end-of-selection.
+
+  perform list_out using gt_out[] 'GT_OUT'.
+
+*----------------------------------------------------------------------*
+
+form initialization.
+
+  gv_repid = sy-repid.
+
+  perform list_initialization(zca_listing) using gv_repid.
+
+endform.                    "initialization
+
+*----------------------------------------------------------------------*
+
+form get_data.
+
+  select mara~matnr
+         mara~brgew
+         mara~gewei
+         mara~mtart
+         mara~matkl
+         mara~ntgew
+         makt~maktx
+
+    into corresponding fields of table gt_out
+    from mara
+
+    join makt
+      on makt~matnr = mara~matnr
+     and makt~spras = p_langu
+
+      up to 100 rows
+   where mara~matnr in s_matnr
+     and mara~mtart in s_mtart.
+
+endform.                    "get_data
+
+*----------------------------------------------------------------------*
+
+form list_out using it_outtab type table
+              value(i_outtab_name) type slis_tabname.
+
+  data: lt_fieldcat type slis_t_fieldcat_alv,
+        ls_layout type slis_layout_alv,
+        ls_print  type slis_print_alv,
+        lt_sort   type slis_t_sortinfo_alv.
+
+  perform list_fill_fieldcat tables lt_fieldcat using i_outtab_name.
+
+  perform list_standard_settings(zca_listing)
+                changing ls_layout ls_print gv_variant.
+
+*  perform list_add_sort(zca_listing) tables lt_sort
+*      using i_outtab_name 'X' '':
+*      'MATNR' '' ''.
+
+  ls_layout-zebra            = 'X'.
+  ls_print-no_print_selinfos = 'X'.
+
+  call function 'REUSE_ALV_GRID_DISPLAY' "=========ALV========"
+    exporting
+      i_callback_program       = gv_repid
+*     i_callback_user_command  = 'LIST_USER_COMMAND'
+*     i_callback_pf_status_set = 'LIST_PF_STATUS'
+      it_fieldcat              = lt_fieldcat
+      it_sort                  = lt_sort[]
+      is_layout                = ls_layout
+      is_print                 = ls_print
+      i_default                = 'X'
+      i_save                   = 'A'
+      is_variant               = gv_variant
+    tables
+      t_outtab                 = it_outtab
+    exceptions
+      program_error            = 1
+      others                   = 2.
+
+  perform show_message.
+
+endform.                    " list_out
+
+*----------------------------------------------------------------------*
+
+form list_fill_fieldcat tables ct_fieldcat type slis_t_fieldcat_alv
+                         using value(i_tabname) type slis_tabname.
+
+  data: cs_text type string
+        value 'SELTEXT_S/SELTEXT_M/SELTEXT_L/REPTEXT_DDIC'.
+
+  perform list_merge_fieldcat(zca_listing) tables ct_fieldcat
+                                            using i_tabname.
+
+*********************** ALV VIEW **********************
+
+  perform list_set_attribute(zca_listing) tables ct_fieldcat
+                                           using i_tabname:
+
+*'SELKZ'               'CHECKBOX'   'X',
+*'SELKZ'               'FIX_COLUMN' 'X',
+*'ISKARTA'             'NO_ZERO'    'X',
+*'BATCH_OK'            'ICON'       'X',
+*'SELKZ/GRUND/ISKARTA' 'EDIT'       'X',
+*'EBELN/EBELP/RSPOS'   'KEY'        space,
+
+* Field.Visible = OFF
+ 'dummy' 'NO_OUT' 'X',
+
+* Unit of Measure
+ 'dummy' 'QFIELDNAME' 'MEINS',
+
+* Sum of Gross and Net Weight
+ 'dummy' 'DO_SUM' 'X',
+
+* Use Medium Lenght for Optimization 
+ 'Field1/Field2/Field3' 'DDICTXT' 'M',
+
+* Column Headers
+ 'dummy'  cs_text 'dummy_text'.
+
+*******************************************************
+
+*---Set All Fields----*
+
+  ct_fieldcat-ddictxt = 'M'.
+  modify ct_fieldcat transporting ddictxt where col_pos <> 0.
+
+
+endform.                    " list_fill_fieldcat
+
+*----------------------------------------------------------------------*
+
+form show_message.
+
+  if sy-subrc <> 0.
+    message id sy-msgid type sy-msgty number sy-msgno
+            with sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  endif.
+
+endform.    
+
+*----------------------------------------------------------------------*
+
+*form list_user_command using i_ucomm    type sy-ucomm
+*                             i_selfield type slis_selfield.
+*  CASE i_ucomm.
+*
+*    WHEN '&IC1'. "double click
+*
+*      IF i_selfield-tabindex = 0. EXIT. ENDIF.
+*      READ TABLE gt_out INDEX i_selfield-tabindex.
+*
+**---ME23N---*
+*
+*      IF i_selfield-fieldname = 'EBELN'
+*      AND gt_out-ebeln <> space.
+*        SET PARAMETER ID 'BES' FIELD gt_out-ebeln.
+*        CALL TRANSACTION 'ME23N' AND SKIP FIRST SCREEN.
+*      ENDIF.
+*
+*  ENDCASE.
+*
+*endform.                    "list_user_command
+
+*----------------------------------------------------------------------*
+
+*form list_pf_status using i_extab type slis_t_extab.
+*
+*  set pf-status 'STANDARD_FULLSCREEN' excluding i_extab.
+*
+*endform.                    "list_pf_status
+
+*----------------------------------------------------------------------*

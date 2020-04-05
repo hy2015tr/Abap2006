@@ -1,0 +1,226 @@
+*======================================================================*
+*
+*  Developer : Hasan YILDIRIM - 00.Month.2006  [ ALFA YAZILIM ]
+*
+*  Subject   : ALV General Report Template
+*
+*======================================================================*
+
+REPORT zhy_alv_main.
+
+*----DATA DEFINITIONS--------------------------------------------------*
+
+TYPE-POOLS slis.
+
+DATA: gv_variant TYPE disvariant,
+      gv_repid   TYPE syst-repid.
+
+DATA: BEGIN OF gt_out OCCURS 0,
+        matnr LIKE mara-matnr,
+        maktx LIKE makt-maktx,
+        brgew LIKE mara-brgew,
+        ntgew LIKE mara-ntgew,
+        gewei LIKE mara-gewei,
+        mtart LIKE mara-mtart,
+        matkl LIKE mara-matkl,
+      END OF gt_out.
+
+DATA: BEGIN OF so,
+        mtart TYPE mara-mtart,
+        matnr TYPE mara-matnr,
+      END OF so.
+
+*-----SELECTION-SCREEN:1-----------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK as01 WITH FRAME TITLE text-001.
+
+SELECT-OPTIONS: s_mtart FOR so-mtart,
+                s_matnr FOR so-matnr.
+
+SELECTION-SCREEN END OF BLOCK as01.
+
+*-----SELECTION-SCREEN:2-----------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK as02 WITH FRAME TITLE text-002.
+
+PARAMETERS: pa_vari  TYPE disvariant-variant,
+            pa_langu TYPE syst-langu DEFAULT sy-langu.
+
+SELECTION-SCREEN END OF BLOCK as02.
+
+*-----AT SELECTION-SCREEN----------------------------------------------*
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR pa_vari.
+
+  PERFORM list_f4_for_variant CHANGING pa_vari.
+
+*-----INITIALIZATION---------------------------------------------------*
+
+INITIALIZATION.
+  PERFORM initialization.
+
+*----START-OF-SELECTION------------------------------------------------*
+
+START-OF-SELECTION.
+
+  PERFORM get_data.
+
+*---------------------------------------------------------------------*
+
+END-OF-SELECTION.
+
+  PERFORM list_out USING gt_out[] 'GT_OUT'.
+
+  INCLUDE zhy_alv_include.
+
+*---------------------------------------------------------------------*
+
+FORM initialization.
+  gv_repid = sy-repid.
+ENDFORM.                    "initialization
+
+*---------------------------------------------------------------------*
+*       FORM get_data                                                 *
+*---------------------------------------------------------------------*
+
+FORM get_data.
+
+  SELECT mara~matnr
+         mara~brgew
+         mara~gewei
+         mara~mtart
+         mara~matkl
+         mara~ntgew
+         makt~maktx
+
+    INTO CORRESPONDING FIELDS OF TABLE gt_out
+    FROM mara
+
+    JOIN makt
+      ON makt~matnr = mara~matnr
+     AND makt~spras = pa_langu
+
+      UP TO 100 ROWS
+   WHERE mara~matnr IN s_matnr
+     AND mara~mtart IN s_mtart.
+
+ENDFORM.                    "get_data
+
+*---------------------------------------------------------------------*
+*       FORM list_out                                                 *
+*---------------------------------------------------------------------*
+
+FORM list_out USING it_outtab TYPE table
+                    value(i_outtab_name) TYPE slis_tabname.
+
+  DATA: lt_fieldcat TYPE slis_t_fieldcat_alv.
+
+  PERFORM list_fill_fieldcat USING i_outtab_name CHANGING lt_fieldcat.
+  PERFORM list_display       USING it_outtab lt_fieldcat.
+
+ENDFORM.                    " list_out
+
+*---------------------------------------------------------------------*
+*       FORM list_fill_fieldcat                                       *
+*---------------------------------------------------------------------*
+
+FORM list_fill_fieldcat USING value(i_tabname) TYPE slis_tabname
+                     CHANGING ct_fieldcat TYPE slis_t_fieldcat_alv.
+
+  PERFORM list_merge_fieldcat USING i_tabname CHANGING ct_fieldcat.
+
+*********************** ALV VIEW **********************
+
+  PERFORM list_set_attribute TABLES ct_fieldcat USING i_tabname:
+
+*'SELKZ'               'CHECKBOX'   'X',
+*'SELKZ'               'FIX_COLUMN' 'X',
+*'ISKARTA'             'NO_ZERO'    'X',
+*'BATCH_OK'            'ICON'       'X',
+*'SELKZ/GRUND/ISKARTA' 'EDIT'       'X',
+*'EBELN/EBELP/RSPOS'   'KEY'        space,
+
+* Field.Visible = OFF
+ 'dummy' 'NO_OUT' 'X',
+
+* Unit of Measure
+ 'dummy' 'QFIELDNAME' 'MEINS',
+
+* Sum of Gross and Net Weight
+ 'dummy' 'DO_SUM' 'X',
+
+* Use Medium Lenght for Optimization 
+ 'Field1/Field2/Field3' 'DDICTXT' 'M',
+
+* Column Headers
+ 'dummy'  'SELTEXT_S/SELTEXT_M/SELTEXT_L/REPTEXT_DDIC' text-101.
+
+*******************************************************
+
+ENDFORM.                    " list_fill_fieldcat
+
+*---------------------------------------------------------------------*
+*       FORM list_display                                             *
+*---------------------------------------------------------------------*
+
+FORM list_display USING it_outtab   TYPE table
+                        it_fieldcat TYPE slis_t_fieldcat_alv.
+
+  DATA: ls_layout TYPE slis_layout_alv,
+        ls_print  TYPE slis_print_alv.
+
+  PERFORM list_standard_settings CHANGING ls_layout ls_print gv_variant.
+
+  gv_variant-variant         = pa_vari.
+  ls_layout-zebra            = 'X'.
+  ls_print-no_print_selinfos = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY' "=========ALV========"
+    EXPORTING
+      i_callback_program       = gv_repid
+      i_callback_user_command  = 'LIST_USER_COMMAND'
+      it_fieldcat              = it_fieldcat
+      is_layout                = ls_layout
+      is_print                 = ls_print
+      i_default                = 'X'
+      i_save                   = 'A'
+      is_variant               = gv_variant
+    TABLES
+      t_outtab                 = it_outtab
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+ENDFORM.                    "list_display
+
+*---------------------------------------------------------------------*
+*       FORM list_user_command                                        *
+*---------------------------------------------------------------------*
+
+FORM list_user_command USING i_ucomm    TYPE sy-ucomm
+                             i_selfield TYPE slis_selfield.
+
+*  CASE i_ucomm.
+*
+*    WHEN '&IC1'. "double click
+*
+*      IF i_selfield-tabindex = 0. EXIT. ENDIF.
+*      READ TABLE gt_out INDEX i_selfield-tabindex.
+*
+**---ME23N---*
+*
+*      IF i_selfield-fieldname = 'EBELN'
+*      AND gt_out-ebeln <> space.
+*        SET PARAMETER ID 'BES' FIELD gt_out-ebeln.
+*        CALL TRANSACTION 'ME23N' AND SKIP FIRST SCREEN.
+*      ENDIF.
+*
+*  ENDCASE.
+
+ENDFORM.                    "list_user_command
+
+*---------------------------------------------------------------------*

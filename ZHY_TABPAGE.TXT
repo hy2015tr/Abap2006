@@ -1,0 +1,106 @@
+*----------------------------------------------------------------------*
+*        TabPage Demo
+*----------------------------------------------------------------------*
+
+report zhy_tabdemo.
+
+*------SubScreen:100---------------------------------------------------*
+
+selection-screen begin of screen 100 as subscreen.
+
+parameters: p1(10) type c,
+            p2(10) type c,
+            p3(10) type c.
+
+selection-screen end of screen 100.
+
+*------SubScreen:200---------------------------------------------------*
+
+selection-screen begin of screen 200 as subscreen.
+
+parameters: q1(10) type c,
+            q2(10) type c,
+            q3(10) type c.
+
+selection-screen end of screen 200.
+
+*----------------------------------------------------------------------*
+
+selection-screen: begin of tabbed block mytab for 3 lines,
+  tab (20) tab1 user-command tab1,
+  tab (20) tab2 user-command tab2,
+end of block mytab.
+
+*----------------------------------------------------------------------*
+
+initialization.
+
+*---Initialize Tab Page---*
+
+  mytab-dynnr     = 100.
+  mytab-prog      = sy-repid.
+  mytab-activetab = 'TAB1'.
+
+*---Initialize Tab Buttons---*
+
+  tab1 = text-t01.
+  tab2 = text-t02.
+
+*----------------------------------------------------------------------*
+
+at selection-screen.
+
+  case sy-dynnr.
+    when 1000.
+      case sy-ucomm.
+        when 'TAB1'.
+          mytab-dynnr     = 100.
+          mytab-activetab = 'TAB1'.
+        when 'TAB2'.
+          mytab-dynnr     = 200.
+          mytab-activetab = 'TAB2'.
+      endcase.
+  endcase.
+
+*----------------------------------------------------------------------*
+
+*module init_0100 output.
+*
+*  loop at screen.
+*    if screen-group1 = 'MOD'.
+*      case flag.
+*        when 'X'.
+*          screen-input = '1'.
+*        when ' '.
+*          screen-input = '0'.
+*      endcase.
+*      modify screen.
+*    endif.
+*  endloop.
+*
+*endmodule.                    "init_0100 OUTPUT
+
+*----------------------------------------------------------------------*
+
+*module user_command_0100 input.
+*
+*  message s888(sabapdocu) with text-050 sy-dynnr.
+*
+*  case sy-ucomm.
+*    when 'TOGGLE'.
+*      if flag = ' '.
+*        flag = 'X'.
+*      elseif flag = 'X'.
+*        flag = ' '.
+*      endif.
+*  endcase.
+*
+*endmodule.                    "user_command_0100 INPUT
+
+*----------------------------------------------------------------------*
+
+start-of-selection.
+
+  write: 'TAB Page Demo'.
+
+*----------------------------------------------------------------------*

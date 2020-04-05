@@ -1,0 +1,261 @@
+*----------------------------------------------------------------------*
+* Pop a Message to specific SAP users
+*
+* How to get a list of all the currently logged on users?
+* How to popup an instant message on a user's monitor?
+* How to get a specific user's details?
+* Usage of 'POPUP_GET_VALUES' function module to get data from user
+* without having to write GUI code
+*
+* Submitted by : SAP Basis, ABAP Programming and Other IMG Stuff
+*                http://www.sap-img.com
+*----------------------------------------------------------------------*
+
+report zpopup no standard page heading.
+
+include <icon>.
+
+data:       begin of usr_tabl occurs 0.
+        include structure uinfo.
+data:       end of usr_tabl.
+
+data:       l_length        type i,
+            t_abaplist      like abaplist occurs 0 with header line,
+            begin of t_user occurs 0,
+                counter     type i,
+                selection   type c,
+                mandt       like sy-mandt,
+                bname       like sy-uname,
+                name_first  like v_adrp_cp-name_first,
+                name_last   like v_adrp_cp-name_last,
+                department  like v_adrp_cp-department,
+                tel_number  like v_adrp_cp-tel_number,
+            end of t_user,
+            l_client        like sy-mandt,
+            l_userid        like uinfo-bname,
+            l_opcode        type x,
+            l_funct_code(1) type c,
+            l_test(200)     type c.
+
+l_opcode = 2.
+
+call 'ThUsrInfo' id 'OPCODE' field l_opcode
+    id 'TAB' field usr_tabl-*sys*.
+
+clear t_user. refresh t_user.
+loop at usr_tabl.
+  t_user-mandt = usr_tabl-mandt.
+  t_user-bname = usr_tabl-bname.
+  append t_user.
+endloop.
+
+sort t_user.
+delete adjacent duplicates from t_user.
+loop at t_user.
+  t_user-counter = sy-tabix.
+  select v~name_first
+
+         v~name_last
+         v~department
+         v~tel_number
+      into (t_user-name_first,
+            t_user-name_last,
+            t_user-department,
+            t_user-tel_number)
+      from usr21 as u
+          join v_adrp_cp as v
+            on u~persnumber = v~persnumber and
+               u~addrnumber = v~addrnumber
+      where u~bname = t_user-bname.
+  endselect.
+  modify t_user.
+endloop.
+
+sort t_user by name_last name_first.
+
+perform display_list.
+
+*----------------------------------------------------------------------*
+
+top-of-page.
+  perform display_menu.
+* End of top-of-page
+
+*----------------------------------------------------------------------*
+
+top-of-page during line-selection.
+  perform display_menu.
+* End of top-of-page during line-selection
+
+at line-selection.
+  if sy-curow = 2.
+    if sy-cucol < 19.
+      t_user-selection = 'X'.
+      modify t_user transporting selection where selection = ''.
+      perform display_list.
+    elseif sy-cucol < 36.
+      clear t_user-selection.
+      modify t_user transporting selection where selection = 'X'.
+      perform display_list.
+    elseif sy-cucol < 50.
+      perform transfer_selection.
+      perform popup_msg.
+    elseif sy-cucol < 67.
+      perform transfer_selection.
+      sort t_user by name_last.
+      perform display_list.
+    elseif sy-cucol < 81.
+      perform transfer_selection.
+      sort t_user by name_first.
+      perform display_list.
+    elseif sy-cucol < 93.
+      perform transfer_selection.
+      sort t_user by mandt.
+      perform display_list.
+    endif.
+  endif.
+* End of line-selection
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_LIST
+*&---------------------------------------------------------------------*
+
+form display_list.
+  sy-lsind = 0.
+  format color col_normal intensified off.
+  loop at t_user.
+    write: / sy-vline, t_user-selection as checkbox,
+             sy-vline, t_user-mandt,
+             sy-vline, t_user-bname,
+             sy-vline, t_user-name_first(15),
+             sy-vline, t_user-name_last(15),
+             sy-vline, t_user-department(20),
+             sy-vline, t_user-tel_number(20), sy-vline.
+    hide: t_user-counter, t_user-selection.
+  endloop.
+  format color off.
+  write: /(108) sy-uline.
+endform.                    " DISPLAY_LIST
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_MENU
+*&---------------------------------------------------------------------*
+
+form display_menu.
+  format color col_heading hotspot.
+  write:   (91) sy-uline,
+     / sy-vline no-gap, (4) icon_select_all no-gap,    'Select All',
+       sy-vline no-gap, (4) icon_deselect_all no-gap,  'Deselect All',
+       sy-vline no-gap, (4) icon_short_message no-gap, 'Send Popup',
+       sy-vline no-gap, (4) icon_sort_up no-gap, 'Last Name' no-gap,
+       sy-vline no-gap, (4) icon_sort_up no-gap, 'First Name' no-gap,
+       sy-vline no-gap, (4) icon_sort_up no-gap, 'Client' no-gap,
+       sy-vline,
+     /(91) sy-uline,
+     /(108) sy-uline.
+  format hotspot off.
+
+  write: / sy-vline, ' ',
+           sy-vline, 'Cli',
+           sy-vline, 'User        ',
+           sy-vline, 'First Name     ',
+           sy-vline, 'Last Name      ',
+           sy-vline, 'Department          ',
+           sy-vline, 'Telephone           ',
+           sy-vline,
+         /(108) sy-uline.
+  format color off.
+endform.                    " DISPLAY_MENU
+
+*&---------------------------------------------------------------------*
+*&      Form  TRANSFER_SELECTION
+*&---------------------------------------------------------------------*
+
+form transfer_selection.
+  do.
+    read line sy-index field value t_user-selection.
+    if sy-subrc <> 0.
+      exit.
+    endif.
+    modify t_user transporting selection
+           where counter = t_user-counter.
+  enddo.
+  clear t_user.
+endform.                    " TRANSFER_SELECTION
+
+*&---------------------------------------------------------------------*
+*&      Form  POPUP_MSG
+*&---------------------------------------------------------------------*
+
+form popup_msg.
+  data: l_msg      like sm04dic-popupmsg value 'Experimental Message',
+        l_len      type i,
+        l_ret      type c.
+
+  loop at t_user where selection = 'X'.
+    perform get_message changing l_msg l_ret.
+    exit.
+  endloop.
+  if l_ret = 'A'.            "User cancelled the message
+    exit.
+  endif.
+*   Get the message text
+  l_len = strlen( l_msg ).
+  loop at t_user where selection = 'X'.
+    call function 'TH_POPUP'
+         exporting
+              client         = t_user-mandt
+              user           = t_user-bname
+              message        = l_msg
+              message_len    = l_length
+*                     CUT_BLANKS     = ' '
+         exceptions
+              user_not_found = 1
+              others         = 2.
+    if sy-subrc <> 0.
+      write: 'User ', t_user-bname, 'not found.'.
+    endif.
+  endloop.
+  if sy-subrc <> 0.
+*       Big error! No user has been selected.
+    message id 'AT' type 'E' number '315' with
+          'No user selected!'.
+    exit.
+  endif.
+endform.                    "popup_msg
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MESSAGE
+*&---------------------------------------------------------------------*
+
+form get_message changing p_l_msg like sm04dic-popupmsg
+                          p_returncode type c.
+  data: begin of fields occurs 1.
+          include structure sval.
+  data: end of fields,
+        returncode type c.
+
+  fields-tabname = 'SM04DIC'.
+  fields-fieldname = 'POPUPMSG'.
+  fields-fieldtext = 'Message :'.
+  concatenate ' - Msg from' sy-uname '.' into fields-value separated
+          by ' '.
+  append fields.
+
+  call function 'POPUP_GET_VALUES'
+    exporting
+      popup_title = 'Supply the popup message'
+    importing
+      returncode  = p_returncode
+    tables
+      fields      = fields.
+
+  if p_returncode = 'A'.
+    exit.
+  else.
+    read table fields index 1.
+    p_l_msg = fields-value.
+  endif.
+endform.                    "get_message
+
+*----------------------------------------------------------------------*

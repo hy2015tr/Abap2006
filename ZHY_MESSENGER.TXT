@@ -1,0 +1,64 @@
+*======================================================================*
+*  Developer : Hasan YILDIRIM - 14.NOV.2005  [ ALFA YAZILIM ]
+*  Subject   : Messaging app in the SAP environment.
+*======================================================================*
+
+*@#@[SAP]
+
+report zhy_messenger.
+
+data it_usr41 type standard table of usr41 with header line.
+
+*selection-screen
+selection-screen begin of block bl1 with frame.
+select-options: client for sy-mandt memory id mem1,
+                user   for sy-uname memory id mem2.
+parameters: message(128) type c lower case,
+            result(50) type c.
+selection-screen end of block bl1.
+
+*at selection-screen output
+at selection-screen output.
+  loop at screen.
+    if screen-name eq 'RESULT'.
+      screen-input = 0.
+      modify screen.
+    endif.
+  endloop.
+
+*at selection-screen
+at selection-screen.
+  if not message is initial and
+     not user is initial.
+    select * from usr41
+             client specified
+             into table it_usr41
+             where mandt in client
+               and bname in user.
+
+    loop at it_usr41.
+
+      call function 'TH_POPUP' destination it_usr41-server
+        exporting
+          client         = it_usr41-mandt
+          user           = it_usr41-bname
+          message        = message
+        exceptions
+          user_not_found = 1
+          others         = 2.
+      clear result.
+      if sy-subrc eq 1.
+        result = 'Kullanici bulunamadi.'.
+      elseif sy-subrc eq 2.
+        result = 'Bilinmeyen hata.'.
+      else.
+        concatenate 'Mesaj gitti.'  it_usr41-bname sy-uzeit
+                   it_usr41-server
+          into result separated by space.
+      endif.
+
+    endloop.
+
+  endif.
+
+*----------------------------------------------------------------------*

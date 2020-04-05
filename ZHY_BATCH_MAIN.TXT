@@ -1,0 +1,67 @@
+*----------------------------------------------------------------------*
+
+REPORT zhy_bdc_shdb
+NO STANDARD PAGE HEADING LINE-SIZE 255.
+
+*----------------------------------------------------------------------*
+
+INCLUDE bdcrecx1.
+
+TYPES: BEGIN OF typ_file,  "file structure
+          matnr(18) TYPE c,
+          maktx(40) TYPE c,
+       END OF typ_file.
+
+TYPES: typ_t_file TYPE STANDARD TABLE OF typ_file.
+
+DATA: wa_file TYPE typ_file,
+      gt_file TYPE typ_t_file.
+
+*----------------------------------------------------------------------*
+
+START-OF-SELECTION.
+
+  CALL FUNCTION 'UPLOAD' "---------FUNCTION---------"
+    EXPORTING
+*     CODEPAGE                      = ' '
+      filename                      = 'C:\'
+      filetype                      = 'DAT'
+    TABLES
+      data_tab                      = gt_file
+   EXCEPTIONS
+     conversion_error              = 1
+     invalid_table_width           = 2
+     invalid_type                  = 3
+     no_batch                      = 4
+     unknown_error                 = 5
+     gui_refuse_filetransfer       = 6
+     OTHERS                        = 7
+            .
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+*----------------------------------------------------------------------*
+
+  PERFORM open_group.
+
+  LOOP AT gt_file INTO wa_file.
+
+    PERFORM bdc_dynpro      USING 'SAPLMGMM'             '0060'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'           '=ENTR'.
+    PERFORM bdc_field       USING 'RMMG1-MATNR'          wa_file-matnr.
+    PERFORM bdc_dynpro      USING 'SAPLMGMM'             '0070'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'           '=ENTR'.
+    PERFORM bdc_field       USING 'MSICHTAUSW-KZSEL(01)' X'.
+    PERFORM bdc_dynpro      USING 'SAPLMGMM'             '4004'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'           '=BU'.
+    PERFORM bdc_field       USING 'MAKT-MAKTX'           wa_file-maktx.
+
+    PERFORM bdc_transaction USING 'MM02'.
+
+  ENDLOOP.
+
+  PERFORM close_group.
+
+*----------------------------------------------------------------------*

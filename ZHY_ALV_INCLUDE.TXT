@@ -1,0 +1,131 @@
+*======================================================================*
+*
+*  LOGS : [ ALFA YAZILIM ] - Hasan YILDIRIM - 24.APR.2006
+*
+*  NOTE : This include contains common ALV reporting subroutines
+*         for conventional FIELDCAT and layout parameters handling.
+*
+*======================================================================*
+
+FORM list_standard_settings
+                CHANGING
+                  cs_layout TYPE slis_layout_alv
+                  cs_print TYPE slis_print_alv
+                  cs_variant LIKE disvariant.
+
+  cs_layout-colwidth_optimize = 'X'.
+  cs_layout-max_linesize      = 1023.
+  cs_layout-get_selinfos      = 'X'.
+  cs_print-no_print_listinfos = 'X'.
+  cs_layout-detail_popup      = 'X'.
+
+  IF cs_variant-report IS INITIAL.
+    cs_variant-report = gv_repid.
+  ENDIF.
+ENDFORM.                               " LIST_STANDARD_SETTINGS
+
+*&---------------------------------------------------------------------*
+*&      Form  list_merge_fieldcat
+*&---------------------------------------------------------------------*
+
+FORM list_merge_fieldcat
+                USING
+                  i_tabname TYPE slis_tabname
+                CHANGING
+                  ct_fieldcat TYPE slis_t_fieldcat_alv.
+
+
+  CALL FUNCTION 'REUSE_ALV_FIELDCATALOG_MERGE'
+    EXPORTING
+      i_program_name         = gv_repid
+      i_internal_tabname     = i_tabname
+      i_inclname             = gv_repid  "
+      i_client_never_display = 'X'
+      i_bypassing_buffer     = 'X'
+    CHANGING
+      ct_fieldcat            = ct_fieldcat[]
+    EXCEPTIONS
+      inconsistent_interface = 1
+      program_error          = 2
+      OTHERS                 = 3.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+         WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+ENDFORM.                    "list_merge_fieldcat
+
+*&---------------------------------------------------------------------*
+*&      Form  list_set_attribute
+*&---------------------------------------------------------------------*
+
+FORM list_set_attribute
+                TABLES
+                   ct_fieldcat  TYPE slis_t_fieldcat_alv
+                 USING
+                   i_tabname    TYPE slis_tabname
+                   i_fieldnames TYPE any
+                   i_attributes TYPE any
+                   i_value TYPE any.
+
+  DATA:lt_fieldnames TYPE STANDARD TABLE OF
+                             slis_fieldname WITH HEADER LINE,
+       lt_attributes TYPE STANDARD TABLE OF
+                             slis_fieldname WITH HEADER LINE.
+
+  FIELD-SYMBOLS: <f_attribute>.
+
+  SPLIT i_fieldnames AT '/' INTO TABLE lt_fieldnames.
+  SPLIT i_attributes AT '/' INTO TABLE lt_attributes.
+
+  LOOP AT lt_fieldnames.
+    READ TABLE ct_fieldcat WITH KEY tabname   = i_tabname
+                                    fieldname = lt_fieldnames.
+    IF sy-subrc = 0.
+      LOOP AT lt_attributes.
+        ASSIGN COMPONENT lt_attributes OF
+                              STRUCTURE ct_fieldcat TO <f_attribute>.
+        IF sy-subrc EQ 0.
+          <f_attribute> = i_value.
+        ENDIF.
+      ENDLOOP.
+      MODIFY ct_fieldcat INDEX sy-tabix.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.                    "list_set_attribute
+
+
+*&---------------------------------------------------------------------*
+*&      Form  list_f4_for_variant
+*&---------------------------------------------------------------------*
+
+FORM list_f4_for_variant
+              CHANGING
+                c_vari TYPE disvariant-variant.
+
+  DATA: e_variant LIKE disvariant.
+  DATA: exit.
+
+  e_variant-report     = gv_repid.
+
+  CALL FUNCTION 'REUSE_ALV_VARIANT_F4'
+    EXPORTING
+      is_variant    = e_variant
+      i_save        = 'A'
+    IMPORTING
+      e_exit        = exit
+      es_variant    = e_variant
+    EXCEPTIONS
+      not_found     = 1
+      program_error = 2
+      OTHERS        = 3.
+  IF sy-subrc <> 2.
+    IF exit = space.
+      c_vari = e_variant-variant.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.                               " list_f4_for_variant
+
+*----------------------------------------------------------------------*

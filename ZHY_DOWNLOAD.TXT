@@ -1,0 +1,76 @@
+*&---------------------------------------------------------------------*
+*& Report  ZHY_DOWNLOAD                                                *
+*&---------------------------------------------------------------------*
+
+REPORT zhy_download.
+
+DATA: BEGIN OF gt_reps OCCURS 0,
+         obj_name TYPE tadir-obj_name,
+      END OF gt_reps.
+
+DATA: gt_source(150) TYPE c OCCURS 0.
+
+DATA: gv_filename TYPE string.
+
+PARAMETERS: pa_aut TYPE tadir-author OBLIGATORY DEFAULT 'HYILDIRIM'.
+PARAMETERS: pa_dir TYPE file         OBLIGATORY DEFAULT 'C:\Abaps\'.
+
+*----------------------------------------------------------------------*
+
+START-OF-SELECTION.
+
+  SELECT obj_name
+    INTO TABLE gt_reps
+    FROM tadir
+    JOIN trdir
+      ON trdir~name = tadir~obj_name
+   WHERE tadir~author = pa_aut.
+
+*---Loop Table---*
+
+  LOOP AT gt_reps.
+
+    READ REPORT gt_reps-obj_name INTO gt_source.
+
+    CONCATENATE pa_dir gt_reps-obj_name '.TXT' INTO gv_filename.
+
+    CALL FUNCTION 'GUI_DOWNLOAD'
+      EXPORTING
+        filename                = gv_filename
+      TABLES
+        data_tab                = gt_source
+      EXCEPTIONS
+        file_write_error        = 1
+        no_batch                = 2
+        gui_refuse_filetransfer = 3
+        invalid_type            = 4
+        no_authority            = 5
+        unknown_error           = 6
+        header_not_allowed      = 7
+        separator_not_allowed   = 8
+        filesize_not_allowed    = 9
+        header_too_long         = 10
+        dp_error_create         = 11
+        dp_error_send           = 12
+        dp_error_write          = 13
+        unknown_dp_error        = 14
+        access_denied           = 15
+        dp_out_of_memory        = 16
+        disk_full               = 17
+        dp_timeout              = 18
+        file_not_found          = 19
+        dataprovider_exception  = 20
+        control_flush_error     = 21
+        OTHERS                  = 22.
+
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ELSE.
+      WRITE:/ gv_filename ,' is OK'.
+
+    ENDIF.
+
+  ENDLOOP.
+
+*----------------------------------------------------------------------*

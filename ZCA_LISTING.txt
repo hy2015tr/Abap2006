@@ -1,0 +1,825 @@
+program zlisting.
+
+*-type-pools-----------------------------------------------------------*
+type-pools: slis, kkblo, t.
+
+*-data-----------------------------------------------------------------*
+data: it_initial_fieldcat   type slis_t_fieldcat_alv.
+data: repid like syst-repid.
+
+data: gv_log_handle type  balloghndl.
+
+*&---------------------------------------------------------------------*
+*&      Form  LIST_MESSAGE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form list_message using p_message.
+
+  call function 'SAPGUI_PROGRESS_INDICATOR'
+      exporting
+*           percentage = 0
+           text       = p_message
+       exceptions
+            others     = 1.
+endform.                               " LIST_MESSAGE
+*&---------------------------------------------------------------------*
+*&      Form  LIST_initialization
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form list_initialization
+                 using
+                   value(p_repid).
+  repid = p_repid.
+
+endform.                               " LIST_initialization
+*&---------------------------------------------------------------------*
+*&      Form  LIST_STANDARD_SETTINGS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form list_standard_settings using ps_layout type slis_layout_alv
+                                  ps_print type slis_print_alv
+                                  ps_variant like disvariant.
+
+  ps_layout-colwidth_optimize = 'X'.
+  ps_layout-max_linesize = 1023.
+  ps_layout-get_selinfos = 'X'.
+  ps_print-no_print_listinfos = 'X'.
+  ps_layout-detail_popup = 'X'.
+
+  if ps_variant-report is initial.
+    ps_variant-report = repid.
+  endif.
+endform.                               " LIST_STANDARD_SETTINGS
+*----------------------------------------------------------------------*
+*       FORM list_merge_fieldcat                                       *
+*----------------------------------------------------------------------*
+*       ........                                                       *
+*----------------------------------------------------------------------*
+*  -->
+*  -->
+*----------------------------------------------------------------------*
+form list_merge_fieldcat
+                tables pt_fieldcat type slis_t_fieldcat_alv
+                 using p_tabname type slis_tabname.
+
+  call function 'REUSE_ALV_FIELDCATALOG_MERGE'
+    exporting
+      i_program_name         = repid
+      i_internal_tabname     = p_tabname
+      i_inclname             = repid  "
+      i_client_never_display = 'X'
+      i_bypassing_buffer     = 'X'
+    changing
+      ct_fieldcat            = pt_fieldcat[]
+    exceptions
+      others                 = 3.
+
+  pt_fieldcat-key = ''.
+  modify pt_fieldcat transporting key
+                            where key eq 'X'.
+
+*  pt_fieldcat-do_sum = 'X'.
+*  modify pt_fieldcat transporting do_sum
+*                            where cfieldname ne space
+*                               or qfieldname ne space
+*                               or currency ne space
+*                               or quantity ne space.
+
+endform.                    "list_merge_fieldcat
+
+*-----------------------------------------------------------------------
+*       form list_set_attribute
+*-----------------------------------------------------------------------
+*       ........
+*-----------------------------------------------------------------------
+*  -->
+*  -->
+*-----------------------------------------------------------------------
+form list_set_attribute
+                tables pt_fieldcat type slis_t_fieldcat_alv
+                 using p_tabname   type slis_tabname
+                       p_fieldnames
+                       p_attributes
+                       p_value.
+
+  data: li_fieldnames  type standard table of
+                              slis_fieldname with header line,
+        li_attributes type standard table of
+                               slis_fieldname with header line.
+
+  field-symbols: <f_attribute>.
+
+  split p_fieldnames at '/' into table li_fieldnames.
+  split p_attributes at '/' into table li_attributes.
+
+  loop at li_fieldnames.
+    read table pt_fieldcat with key tabname   = p_tabname
+                                    fieldname = li_fieldnames.
+    if sy-subrc = 0.
+      loop at li_attributes.
+        assign component li_attributes of
+                              structure pt_fieldcat to <f_attribute>.
+        if sy-subrc eq 0.
+          <f_attribute> = p_value.
+        endif.
+      endloop.
+      modify pt_fieldcat index sy-tabix.
+    endif.
+  endloop.
+
+endform.                    "list_set_attribute
+
+*&---------------------------------------------------------------------*
+*&      Form  list_add_sort
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form list_add_sort
+                tables pt_sorttab  type slis_t_sortinfo_alv
+                 using p_tabname   type slis_tabname
+                       p_up        like alvdynp-sortup
+                       p_down      like alvdynp-sortdown
+                       p_fieldname type slis_fieldname
+                       p_group     like alvdynp-grouplevel
+                       p_subtot    like alvdynp-subtotals.
+
+  pt_sorttab-spos      = pt_sorttab-spos + 1.
+  pt_sorttab-up        = p_up.
+  pt_sorttab-down      = p_down.
+  pt_sorttab-tabname   = p_tabname.
+  pt_sorttab-fieldname = p_fieldname.
+  pt_sorttab-group     = p_group.
+  pt_sorttab-subtot    = p_subtot.
+  append pt_sorttab.
+
+endform.                    "list_add_sort
+
+
+*&---------------------------------------------------------------------*
+*&      Form  list_f4_for_variant
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->
+*----------------------------------------------------------------------*
+form list_f4_for_variant using p_vari  like disvariant-variant.
+
+  data: e_variant like disvariant.
+  data: exit.
+
+  e_variant-report     = repid.
+
+  call function 'REUSE_ALV_VARIANT_F4'
+    exporting
+      is_variant    = e_variant
+      i_save        = 'A'
+    importing
+      e_exit        = exit
+      es_variant    = e_variant
+    exceptions
+      not_found     = 1
+      program_error = 2
+      others        = 3.
+  if sy-subrc <> 2.
+    if exit = space.
+      p_vari = e_variant-variant.
+    endif.
+  endif.
+
+endform.                               " list_f4_for_variant
+*&---------------------------------------------------------------------*
+*&      Form  LIST_COLLECT_OUTTAB
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form list_collect_outtab tables pt_doc pt_out
+                          using p_refresh p_callback_form.
+
+  perform collect_outtab tables pt_doc pt_out
+                        using p_refresh p_callback_form
+                              'REUSE_ALV_LIST_LAYOUT_INFO_GET'.
+
+
+endform.                               " LIST_COLLECT_OUTTAB
+*&---------------------------------------------------------------------*
+*&      Form  grid_collect_outtab
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form grid_collect_outtab  tables pt_doc pt_out
+                          using p_refresh p_callback_form.
+
+
+  perform collect_outtab tables pt_doc pt_out
+                         using p_refresh p_callback_form
+                               'REUSE_ALV_GRID_LAYOUT_INFO_GET'.
+
+endform.                    " grid_collect_outtab
+*&---------------------------------------------------------------------*
+*&      Form  LIST_COLLECT_OUTTAB
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form collect_outtab tables pt_doc pt_out
+                          using p_refresh p_callback_form
+                                p_function.
+  statics  et_fieldcat type slis_t_fieldcat_alv with header line.
+
+  field-symbols: <f_it_doc> type any table,
+                 <f_w_doc>,
+                 <f_it_out> type any table,
+                 <f_w_out>.
+  field-symbols: <f_source>,
+                 <f_target>.
+
+  perform check_layout  tables et_fieldcat
+                        using p_refresh p_function.
+
+  check p_refresh eq 'X'.
+
+* collect iþlemi yapýlýyor.
+  assign: pt_doc[] to <f_it_doc> ,
+          pt_doc   to <f_w_doc>.
+  assign: pt_out[] to <f_it_out> ,
+          pt_out   to <f_w_out>.
+
+  clear <f_it_out>.
+
+  loop at <f_it_doc> into <f_w_doc>.
+    clear <f_w_out>.
+
+    loop at et_fieldcat where ( ( no_out eq space or
+                                  no_out eq 'O'  ) and
+                                tech   eq space )
+                           or sp_group eq '@'.
+      assign component et_fieldcat-fieldname
+                      of structure <f_w_out> to <f_target>.
+      if sy-subrc eq 0.
+        assign component et_fieldcat-fieldname
+                        of structure <f_w_doc> to <f_source>.
+        if sy-subrc eq 0.
+          <f_target> = <f_source>.
+        endif.
+      endif.
+    endloop.
+
+    if not p_callback_form is initial.
+      perform (p_callback_form) in program (repid) if found.
+
+      loop at et_fieldcat where ( ( no_out ne space and
+                                    no_out ne 'O' ) or
+                                  tech   ne space )
+                            and sp_group ne '@'.
+        assign component et_fieldcat-fieldname
+                        of structure <f_w_out> to <f_target>.
+        if sy-subrc eq 0.
+          clear <f_target>.
+        endif.
+      endloop.
+    endif.
+
+    collect <f_w_out> into <f_it_out>.
+  endloop.
+
+endform.                               " COLLECT_OUTTAB
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_LAYOUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form check_layout
+           tables
+              pt_fieldcat type slis_t_fieldcat_alv
+            using
+              p_new_layout p_function.
+
+  data: lt_fieldcat type slis_t_fieldcat_alv with header line.
+  data  ls_layout type slis_layout_alv.
+
+
+  lt_fieldcat[] = pt_fieldcat[].
+
+  call function p_function
+    importing
+      et_fieldcat   = pt_fieldcat[]
+      es_layout     = ls_layout
+    exceptions
+      no_infos      = 1
+      program_error = 2
+      others        = 3.
+
+  if sy-subrc <> 0 or
+     pt_fieldcat[] is initial.
+    pt_fieldcat[] = it_initial_fieldcat.
+  endif.
+
+  if lt_fieldcat[] is initial.
+    p_new_layout = 'X'.
+  else.
+    loop at pt_fieldcat.
+      loop at lt_fieldcat where fieldname eq pt_fieldcat-fieldname
+                            and tabname eq pt_fieldcat-tabname.
+        exit.
+      endloop.
+      if  pt_fieldcat-no_out ne lt_fieldcat-no_out
+*         pt_fieldcat-tech   NE lt_fieldcat-tech
+          .
+        p_new_layout = 'X'.
+        exit.
+      endif.
+    endloop.
+  endif.
+
+  if p_new_layout = 'X'.
+* ozel teknik alanlar korunuyor.
+    if not ls_layout-lights_fieldname is initial.
+      pt_fieldcat-sp_group = '@'.
+      modify pt_fieldcat transporting sp_group
+                         where fieldname = ls_layout-lights_fieldname
+                           and no_out = space.
+    endif.
+* unit ve currency alanlarý korunuyor
+    loop at pt_fieldcat where no_out eq space
+                          and tech eq space
+                          and ( qfieldname ne space or
+                                cfieldname ne space ).
+      pt_fieldcat-sp_group = '@'.
+      modify pt_fieldcat transporting sp_group
+                      where fieldname eq pt_fieldcat-qfieldname
+                         or fieldname eq pt_fieldcat-cfieldname.
+    endloop.
+  endif.
+
+endform.                               " CHECK_LAYOUT
+*&---------------------------------------------------------------------*
+*&      Form  LT_VARIANT_LOAD
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form lt_variant_load
+            using value(pt_fieldcat) type slis_t_fieldcat_alv
+                  p_tabname type kkblo_tabname
+                  p_default
+                  p_save
+                  value(ps_variant) structure disvariant.
+
+  data: l_user_specific,
+        lt_fieldcat       type kkblo_t_fieldcat,
+        s_layout         type kkblo_layout.
+
+  case p_save.
+    when 'A' or 'U'.
+      l_user_specific = 'X'.
+    when 'X' or space.
+      l_user_specific = space.
+  endcase.
+
+  call function 'REUSE_ALV_TRANSFER_DATA'
+    exporting
+      it_fieldcat = pt_fieldcat
+    importing
+      et_fieldcat = lt_fieldcat
+    exceptions
+      others      = 1.
+
+  call function 'LT_VARIANT_LOAD'
+    exporting
+      i_tabname           = p_tabname
+      i_dialog            = 'N'
+      i_user_specific     = l_user_specific
+      i_default           = p_default
+    importing
+      et_fieldcat         = lt_fieldcat
+    changing
+      cs_layout           = s_layout
+      ct_default_fieldcat = lt_fieldcat
+      cs_variant          = ps_variant
+    exceptions
+      wrong_input         = 1
+      fc_not_complete     = 2
+      not_found           = 3
+      others              = 4.
+
+  if sy-subrc = 0.
+    refresh pt_fieldcat.
+    call function 'REUSE_ALV_TRANSFER_DATA_BACK'
+      exporting
+        it_fieldcat = lt_fieldcat
+      importing
+        et_fieldcat = pt_fieldcat
+      exceptions
+        others      = 1.
+  endif.
+
+  it_initial_fieldcat = pt_fieldcat[].
+
+endform.                               " LT_VARIANT_LOAD
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_RANGE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form build_range tables p_range
+                        p_data
+                 using  p_field_name type c.
+  data:
+    z_check(128),
+    z_csame(128),
+    z_prev(128),
+    z_test(128).
+
+  data:
+      z_length  type i.
+
+  field-symbols:
+    <fs_check>,
+    <fs_csame>,
+    <fs_prev>,
+    <fs_test>,
+    <fs_key>,
+    <fs_r_low>,
+    <fs_r_high>,
+    <fs_r_sign>,
+    <fs_r_opt>.
+
+* sadece karakter ve numerIk alanlardan range olusturur
+  assign component p_field_name of structure p_data to <fs_key>.
+  if sy-subrc <> 0.
+    exit.
+  else.
+    sort p_data by (p_field_name).
+    describe field <fs_key> length z_length in byte mode.
+    assign z_check(z_length) to <fs_check>.
+    assign z_csame(z_length) to <fs_csame>.
+    assign z_test(z_length)  to <fs_test> .
+    assign z_prev(z_length)  to <fs_prev> .
+
+    assign component 'LOW' of structure p_range to <fs_r_low>.
+    if sy-subrc <> 0.
+      exit.
+    endif.
+
+    assign component 'HIGH' of structure p_range to <fs_r_high>.
+    if sy-subrc <> 0.
+      exit.
+    endif.
+
+    assign component 'SIGN' of structure p_range to <fs_r_sign>.
+    if sy-subrc <> 0.
+      exit.
+    endif.
+
+    assign component 'OPTION' of structure p_range to <fs_r_opt>.
+    if sy-subrc <> 0.
+      exit.
+    endif.
+
+    clear p_range.
+    free  p_range.
+    <fs_r_sign> = 'I'.
+    <fs_r_opt> = 'BT'.
+    loop at p_data.
+      if sy-tabix = 1.
+        <fs_r_low> = <fs_r_high> = <fs_key>.
+      else.
+        if not <fs_prev> co '0123456789 '.
+          if <fs_prev> ne <fs_key>.
+            append p_range.
+            if <fs_r_low> = <fs_r_high>.
+              <fs_r_opt> = 'EQ'.
+            else.
+              <fs_r_opt> = 'BT'.
+            endif.
+            <fs_r_low> = <fs_r_high> = <fs_key>.
+          endif.
+        else.
+          <fs_csame> = <fs_prev>.
+          shift <fs_csame> left deleting leading '0'.
+          shift <fs_csame> left deleting leading ' '.
+          <fs_check> = <fs_prev> + 1.
+          shift <fs_check> left deleting leading '0'.
+          shift <fs_check> left deleting leading ' '.
+          <fs_test> = <fs_key>.
+          shift <fs_test> left deleting leading '0'.
+          shift <fs_test> left deleting leading ' '.
+          if <fs_test> = <fs_check> or <fs_test> = <fs_csame>.
+            <fs_r_high> = <fs_key>.
+          else.
+            if <fs_r_low> = <fs_r_high>.
+              <fs_r_opt> = 'EQ'.
+            else.
+              <fs_r_opt> = 'BT'.
+            endif.
+            append p_range.
+            <fs_r_low> = <fs_r_high> = <fs_key>.
+          endif.
+        endif.
+      endif.
+      <fs_prev> = <fs_key>.
+    endloop.
+
+    if <fs_r_low> = <fs_r_high>.
+      <fs_r_opt> = 'EQ'.
+    else.
+      <fs_r_opt> = 'BT'.
+    endif.
+    append p_range.
+
+  endif.                               " range alaný ham tabloda mevcut?
+endform.                               " BUILD_RANGE
+*&---------------------------------------------------------------------*
+*&      Form  VALUE_FOR_PATH
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+form value_for_path
+               changing
+                c_filename type clike.
+*  data l_mask(255).
+*
+*  concatenate ',Texts (*.txt),*.txt'
+*              ',All Documents (*.*),*.*'
+*              '.'
+*              into l_mask.
+*
+*  call function 'WS_FILENAME_GET'
+*    exporting
+*      def_path         = p_path
+*      mask             = l_mask
+*      mode             = 'O'
+*      title            = 'Dosyalar'
+*    importing
+*      filename         = p_path
+*    exceptions
+*      inv_winsys       = 1
+*      no_batch         = 2
+*      selection_cancel = 3
+*      selection_error  = 4
+*      others           = 5.
+
+  data: lt_file_table type filetable with header line.
+  data: lv_retcode type sy-subrc.
+
+  call method cl_gui_frontend_services=>file_open_dialog
+    exporting
+      multiselection          = ' '
+    changing
+      file_table              = lt_file_table[]
+      rc                      = lv_retcode
+    exceptions
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      not_supported_by_gui    = 4
+      others                  = 5.
+
+  if sy-subrc <> 0.
+    message id sy-msgid type sy-msgty number sy-msgno
+               with sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  else.
+    read table lt_file_table index 1.
+    c_filename = lt_file_table-filename.
+  endif.
+
+endform.                               " VALUE_FOR_PATH
+
+*&---------------------------------------------------------------------*
+*&      Form  unit_conversion
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form unit_conversion using
+                       value(u_matnr) type matnr
+                       value(u_unit_in) type meins
+                       value(u_unit_out) type meins
+                       value(u_amount_in)
+                     changing
+                        c_amount_out.
+
+  data: lv_amount_temp type ekpo-menge.
+
+  lv_amount_temp = u_amount_in.
+
+  call function 'MD_CONVERT_MATERIAL_UNIT'
+    exporting
+      i_matnr              = u_matnr
+      i_in_me              = u_unit_in
+      i_out_me             = u_unit_out
+      i_menge              = lv_amount_temp
+    importing
+      e_menge              = lv_amount_temp
+    exceptions
+      error_in_application = 1
+      error                = 2
+      others               = 3.
+
+  if sy-subrc <> 0.
+    message id sy-msgid type sy-msgty number sy-msgno
+            with sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  endif.
+
+  c_amount_out = lv_amount_temp.
+
+endform.                    "unit_conversion
+
+*&---------------------------------------------------------------------*
+*&      Form  log_create
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form log_create.
+
+  data: ls_log type bal_s_log.
+
+  ls_log-extnumber = 'Report Application Error Log'.
+  ls_log-aluser    = sy-uname.
+  ls_log-alprog    = sy-repid.
+
+  call function 'BAL_LOG_CREATE'
+    exporting
+      i_s_log      = ls_log
+    importing
+      e_log_handle = gv_log_handle
+    exceptions
+      others       = 1.
+
+endform.                    "log_create
+
+*&---------------------------------------------------------------------*
+*&      Form  log_display
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form log_display.
+  data: ls_profile type bal_s_prof,
+        ls_statistics type  bal_s_scnt.
+
+  call function 'BAL_LOG_HDR_READ'
+    exporting
+      i_log_handle  = gv_log_handle
+    importing
+      e_statistics  = ls_statistics
+    exceptions
+      log_not_found = 1
+      others        = 2.
+
+  if ls_statistics-msg_cnt_al <> 0.
+    call function 'BAL_DSP_PROFILE_POPUP_GET'
+      importing
+        e_s_display_profile = ls_profile
+      exceptions
+        others              = 1.
+
+    ls_profile-use_grid = 'X'.
+
+    call function 'BAL_DSP_LOG_DISPLAY'
+      exporting
+        i_s_display_profile = ls_profile
+      exceptions
+        others              = 1.
+
+  endif.
+
+endform.                    "log_display
+
+*&---------------------------------------------------------------------*
+*&      Form  log_append
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form log_append using value(i_probclass) type bal_s_msg-probclass.
+
+  data: ls_msg type bal_s_msg.
+
+  ls_msg-msgty     = sy-msgty.
+  ls_msg-msgid     = sy-msgid.
+  ls_msg-msgno     = sy-msgno.
+  ls_msg-msgv1     = sy-msgv1.
+  ls_msg-msgv2     = sy-msgv2.
+  ls_msg-msgv3     = sy-msgv3.
+  ls_msg-msgv4     = sy-msgv4.
+  ls_msg-probclass = i_probclass.
+
+  call function 'BAL_LOG_MSG_ADD'
+    exporting
+      i_s_msg       = ls_msg
+    exceptions
+      log_not_found = 0
+      others        = 1.
+
+endform.                    "log_append
+
+*&---------------------------------------------------------------------*
+*&      Form  log_collect
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form log_collect using value(i_probclass) type bal_s_msg-probclass
+                       value(compare_attributes) type boolean
+                       value(compare_context) type boolean
+                       value(compare_parameters) type boolean.
+
+  data: ls_msg type bal_s_msg.
+
+  ls_msg-msgty     = sy-msgty.
+  ls_msg-msgid     = sy-msgid.
+  ls_msg-msgno     = sy-msgno.
+  ls_msg-msgv1     = sy-msgv1.
+  ls_msg-msgv2     = sy-msgv2.
+  ls_msg-msgv3     = sy-msgv3.
+  ls_msg-msgv4     = sy-msgv4.
+  ls_msg-probclass = i_probclass.
+
+  call function 'BAL_LOG_MSG_CUMULATE'
+    exporting
+      i_s_msg              = ls_msg
+      i_compare_attributes = compare_attributes
+      i_compare_context    = compare_context
+      i_compare_parameters = compare_parameters
+    exceptions
+      log_not_found        = 1
+      msg_inconsistent     = 2
+      log_is_full          = 3
+      others               = 4.
+
+endform.                    "log_collect
+
+*&---------------------------------------------------------------------*
+*&      Form  log_read
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form log_read changing ct_messages type t_prepared_messages.
+
+  data: header_data        type table of balhdr,
+        header_parameters  type table of balhdrp,
+        messages           type table of balm,
+        message_parameters type table of balmp,
+        t_log_handle       type bal_t_logh.
+
+  refresh ct_messages.
+
+  call function 'APPL_LOG_READ_INTERN'
+    exporting
+      log_handle             = gv_log_handle
+    tables
+      header_data            = header_data
+      header_parameters      = header_parameters
+      messages               = messages
+      message_parameters     = message_parameters
+      message_prepared       = ct_messages
+    exceptions
+      object_not_found       = 1
+      subobject_not_found    = 2
+      function_not_completed = 3
+      message_not_found      = 4
+      parameter_missing      = 5
+      others                 = 6.
+
+endform.                    "log_read
+
+*&---------------------------------------------------------------------*
+*&      Form  log_delete
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+form log_delete_all.
+
+  call function 'BAL_LOG_MSG_DELETE_ALL'
+    exporting
+      i_log_handle  = gv_log_handle
+    exceptions
+      log_not_found = 1
+      others        = 2.
+
+endform.                    "log_delete
